@@ -8,7 +8,7 @@ on:
 
 env:
   docker-registry: docker.pkg.github.com
-  docker-config-path: ci/docker
+  docker-config-path: source/ci/docker
 
 jobs:
   # Run our nightly builds.  We build a matrix with the various build
@@ -105,6 +105,21 @@ jobs:
             CMAKE_OPTIONS: -DCMAKE_PREFIX_PATH=/usr/local
             CMAKE_GENERATOR: Ninja
             SKIP_SSH_TESTS: true
+            SKIP_NEGOTIATE_TESTS: true
+          os: ubuntu-latest
+        - # CentOS 7
+          container:
+            name: centos7
+          env:
+            CMAKE_OPTIONS: -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON
+            SKIP_NEGOTIATE_TESTS: true
+            BUILD_PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          os: ubuntu-latest
+        - # CentOS 8
+          container:
+            name: centos8
+          env:
+            CMAKE_OPTIONS: -DDEPRECATE_HARD=ON -DUSE_LEAK_CHECKER=valgrind -DUSE_GSSAPI=ON
             SKIP_NEGOTIATE_TESTS: true
           os: ubuntu-latest
         - # macOS
@@ -215,9 +230,10 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v2
       with:
+        path: source
         fetch-depth: 0
     - name: Set up build environment
-      run: ci/setup-${{ matrix.platform.setup-script }}.sh
+      run: source/ci/setup-${{ matrix.platform.setup-script }}.sh
       shell: bash
       if: matrix.platform.setup-script != ''
     - name: Setup QEMU
@@ -225,7 +241,7 @@ jobs:
       if: matrix.platform.container.qemu == true
     - name: Download container
       run: |
-        "${{ github.workspace }}/ci/getcontainer.sh" "${{ matrix.platform.container.name }}" "${{ matrix.platform.container.dockerfile }}"
+        "${{ github.workspace }}/source/ci/getcontainer.sh" "${{ matrix.platform.container.name }}" "${{ matrix.platform.container.dockerfile }}"
       env:
         DOCKER_REGISTRY: ${{ env.docker-registry }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
@@ -242,8 +258,9 @@ jobs:
         if [ -n "${{ matrix.platform.container.name }}" ]; then
           docker run \
               --rm \
-              -v "$(pwd):/home/libgit2/source" \
-              -w /home/libgit2/source \
+              --user libgit2:libgit2 \
+              -v "$(pwd)/source:/home/libgit2/source" \
+              -w /home/libgit2 \
               -e ASAN_SYMBOLIZER_PATH \
               -e CC \
               -e CFLAGS \
@@ -255,11 +272,11 @@ jobs:
               -e SKIP_SSH_TESTS \
               -e TSAN_OPTIONS \
               ${{ env.docker-registry-container-sha }} \
-              /bin/bash -c "mkdir build && cd build && ../ci/build.sh && ../ci/test.sh"
+              /bin/bash -c "mkdir build && cd build && ../source/ci/build.sh && ../source/ci/test.sh"
         else
           mkdir build && cd build
-          ../ci/build.sh
-          ../ci/test.sh
+          ../source/ci/build.sh
+          ../source/ci/test.sh
         fi
       shell: bash
 
@@ -270,15 +287,16 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v2
       with:
+        path: source
         fetch-depth: 0
     - name: Download container
       run: |
-        "${{ github.workspace }}/ci/getcontainer.sh" xenial
+        "${{ github.workspace }}/source/ci/getcontainer.sh" xenial
       env:
         DOCKER_REGISTRY: ${{ env.docker-registry }}
         GITHUB_TOKEN: ${{ secrets.github_token }}
       working-directory: ${{ env.docker-config-path }}
     - name: Run Coverity
-      run: ci/coverity.sh
+      run: source/ci/coverity.sh
       env:
         COVERITY_TOKEN: ${{ secrets.coverity_token }}
